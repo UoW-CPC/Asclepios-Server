@@ -6,6 +6,11 @@ FROM python:3.7-slim
 # to the terminal with out buffering it first
 #ENV PYTHONUNBUFFERED 1
 
+# install psql client
+RUN apt-get update && \
+    apt-get install -y postgresql-client && \
+    rm -rf /var/lib/apt/lists/
+
 # create root directory for our project in the container
 RUN mkdir /SSEServer
 
