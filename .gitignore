@@ -1,0 +1,9 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# OSX artifacts
+.DS_Store
+
+# Development database
+db.sqlite3
