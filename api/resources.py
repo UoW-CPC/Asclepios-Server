@@ -148,8 +148,6 @@ class SearchResource(Resource):
         
         if Lu == Lta:
             logger.debug("Lu = Lta")
-            # Identify list of json identifiers
-            #Cfw = []
             
             # List of encrypted data
             CipherL = []
@@ -171,9 +169,6 @@ class SearchResource(Resource):
                     cf = Map.objects.get(address=addr).value
                     logger.debug("File identifier: %s",cf)
                     
-                    # Create list of values, which will be used to identify json-id
-                    #Cfw.append(cf)
-                    
                     # Retrieve ciphertexts
                     ct = CipherText.objects.filter(jsonId=cf).values()
                     logger.debug("Ciphertext of the same file: %s",ct)
@@ -187,14 +182,13 @@ class SearchResource(Resource):
                     logger.debug("Not found: %s",addr)
                     cf = None
                         
-#             bundle.obj.Cfw = Cfw
             bundle.obj.Cfw = CipherL
             logger.debug("The list of ciphertext: %s",CipherL)
-           # bundle.obj.Cfw = CipherL
+
             bundle.obj.KeyW = '' # hide KeyW in the response
             bundle.obj.fileno = 0 # hide fileNo in the response  
             bundle.obj.Lu=[]     # hide Lu in the response  
-#             logger.debug("Send list of addresses (Cfw) back to the user:", bundle)
+
             logger.debug("Send list of ciphertext (Cfw) back to the user: %s", bundle)
         else:
             logger.debug("Lu!=Lta")
@@ -311,34 +305,25 @@ class UpdateResource(Resource):
         flag = True
          
         for i in range(0,length):
-            Lta = Lobject[i]["Lta"]
+            Lta = Lobject[i]["Lta"] # list of addresses computed by TA with No.Search + 1
             logger.debug("List %d from TA %s",i,Lta)
-            Lu = Ltemp[i] # list of addresses computed for i_th keyword
+            Lu = Ltemp[i] # list of addresses computed for i_th keyword by user with No.Search+1
             logger.debug("List %d from user: %s",i,Lu)
             if not(Lu == Lta): # if found any non-match (exits a a keyword, of which addresses computed by user and TA are different)
                 flag=False
-                i = length
+                i = length # exit For loop
                 logger.debug("not match")
          
         if flag==True:
             logger.debug("matched")
-#         if Lu == Lta:
-#             logger.debug("Lu = Lta")
-#             # Identify list of json identifiers
-#             #Cfw = []
-#             
-#             # List of encrypted data
-#             CipherL = []
-# 
             logger.debug("Lfileno: %s",Lfileno)
-            
-            ret = 0
+                     
             for j in range(0,length): # loop over each field
                 KeyW = LkeyW[j] 
                 logger.debug("j: %d, KeyW: %s",j,KeyW)
                 KeyW_ciphertext = KeyW['ct'] # get value of json
                 fileno = Lfileno[j]
-                
+
                 # find the entry in Map table
                 for i in range(1, int(fileno) + 1): # fileno starts at 1
                     logger.debug("i: %d", i)
@@ -347,38 +332,59 @@ class UpdateResource(Resource):
                     logger.debug("hash input to compute address: %s", input)
                     logger.debug("the hash output (computed from KeyW): %s", addr)
                     logger.debug("type of addr: %s",type(addr))
-     
+    
                     try:
                         logger.debug("finding address")
-                         
-                        # Retrieve value which corresponds to the address 'addr'
-                        cf = Map.objects.get(address=addr).value # cf is only a value
-                        logger.debug("File identifier and file_id: %s, %s",cf,file_id)
-                        if(cf==file_id):
-                            logger.debug("Found item at i=",i)
+                        cf = Map.objects.filter(address=addr,value=file_id)
+                        count = cf.count()
+                        logger.debug("number of found items:%d",count)
+                        if (count>0):
+                            logger.debug("Found item at i=%d",i)
+                            logger.debug("Found item is: %s",cf)
                             ret = i
-                            i=int(fileno) + 1 # stop the for loop                      
+
+                            logger.debug("ends at item:%d",i)
+                            
+                            # Delete the current (address, value) and update with the new (address, value)
+                            logger.debug("Delete the entry")
+                            cf.delete()
+                            
+                            # add new address
+                            logger.debug("New address: %s", Lnew[j])
+                            logger.debug("Add new address")
+                            Map.objects.create(address=Lnew[j][0], value=file_id)
+                            
+                            logger.debug("fileno:%d",int(fileno))
+                            
+                            
+                            if i < int(fileno): # replace address of the last entry of the same keyword
+                                logger.debug("Replace the item with the lastly-added address of the same keyword")
+                                lastitem_input =  (KeyW_ciphertext + str(fileno) + "0").encode('utf-8')
+                                logger.debug("lastly-added item input:%s",KeyW_ciphertext + str(fileno) + "0")
+                                lastitem_addr = hash(lastitem_input)
+                                logger.debug("The address of lastly-added item of the same keyword:%s",lastitem_addr)
+                                lastitem = Map.objects.get(address=lastitem_addr)
+                                logger.debug("Lastly-added item of the same keyword:%s,%s",lastitem.address,lastitem.value)
+                                lastitem_fileid = lastitem.value
+                                logger.debug("File id of lastly-added item of the same keyword:%s",lastitem_fileid)
+                                lastitem.delete()
+                                Map.objects.create(address=addr, value=lastitem_fileid)
+                            else:
+                                logger.debug("i (%d) is larger than fileno (%d)",i,int(fileno))
+                
+                     
+                            # find the ciphertext in Cipher table 
+                            # Note that in this implementation, ciphertext of the same keywords in different files are the same
+                            logger.debug("Replace ciphertext")
+                            data = CipherText.objects.filter(data=Lcurrent_cipher[j], jsonId=file_id) 
+                            logger.debug("current cipher: %s", data)
+                            data.delete()
+                            logger.debug("new cipher: {}", Lnew_cipher[j])
+                            CipherText.objects.create(data=Lnew_cipher[j], jsonId=file_id)
+                        
+                            i=int(fileno)+1 # stop the for loop
                     except:
                         logger.debug("Not found: %s",addr)
                         cf = None                         
-                
-                logger.debug("ret: %d",ret)
-                
-                # Delete the current (address, value) and update with the new (address, value)
-                if (ret > 0): # if found
-                    input =  (KeyW_ciphertext + str(ret) + "0").encode('utf-8')
-                    addr = hash(input)
-                    Map.objects.get(address=addr).delete()
-                    logger.debug("New address: %s",Lnew[j])
-                    Map.objects.create(address=Lnew[j][0],value=cf)
-                 
-                    # find the ciphertext in Cipher table 
-                    # Note that in this implementation, ciphertext of the same keywords in different files are the same
-                    logger.debug("Replace ciphertext")
-                    data=CipherText.objects.filter(data=Lcurrent_cipher[j],jsonId=file_id) 
-                    logger.debug("current cipher: {}",data)
-                    data.delete()
-                    logger.debug("new cipher: {}",Lnew_cipher[j])
-                    CipherText.objects.create(data=Lnew_cipher[j],jsonId=file_id)
         return bundle
 
