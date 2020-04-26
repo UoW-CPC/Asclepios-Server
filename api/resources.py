@@ -49,6 +49,7 @@ class MapResource(ModelResource):
         authorization = Authorization()
         filtering = {
             "address": ['exact'],
+            "value": ['exact'],
         }
 
     
