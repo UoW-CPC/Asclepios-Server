@@ -218,7 +218,7 @@ class UpdateResource(Resource):
     Lfileno = fields.ListField(attribute='Lfileno')
     Ltemp = fields.ListField(attribute='Ltemp')
     Lnew = fields.ListField(attribute='Lnew')
-    status = fields.IntegerField(attribute='status')
+    status = fields.IntegerField(attribute='status')  # status of update, i.e. 0 if not found, 1 if deleted
     file_id = fields.CharField(attribute='file_id')
     Lcurrentcipher = fields.ListField(attribute='Lcurrentcipher')
     Lnewcipher = fields.ListField(attribute='Lnewcipher')
@@ -371,7 +371,7 @@ class UpdateResource(Resource):
                                 lastitem.delete()
                                 Map.objects.create(address=addr, value=lastitem_fileid)
                             else:
-                                logger.debug("i (%d) is larger than fileno (%d)",i,int(fileno))
+                                logger.debug("i (%d) is equal fileno (%d)",i,int(fileno))
                 
                      
                             # find the ciphertext in Cipher table 
@@ -382,6 +382,197 @@ class UpdateResource(Resource):
                             data.delete()
                             logger.debug("new cipher: {}", Lnew_cipher[j])
                             CipherText.objects.create(data=Lnew_cipher[j], jsonId=file_id)
+                        
+                            i=int(fileno)+1 # stop the for loop
+                    except:
+                        logger.debug("Not found: %s",addr)
+                        cf = None                         
+        return bundle
+
+#===============================================================================       
+class Delete(object):
+    LkeyW = [] # list of KeyW
+    LfileNo = [] # list of No.Files
+    Ltemp = [] # list of temp addresses
+    Lnew = [] # list of new addresses
+    status = 0 # status of update, i.e. 0 if not found, 1 if deleted
+    file_id=""
+    Lcurrentcipher = []
+    Lnewcipher = []
+    
+
+#===============================================================================
+# "Delete Query" resource
+#===============================================================================   
+class DeleteResource(Resource):
+    LkeyW = fields.ListField(attribute='LkeyW')
+    Lfileno = fields.ListField(attribute='Lfileno')
+    Ltemp = fields.ListField(attribute='Ltemp')
+   # Lnew = fields.ListField(attribute='Lnew')
+    status = fields.IntegerField(attribute='status')
+    file_id = fields.CharField(attribute='file_id')
+    Lcipher = fields.ListField(attribute='Lcipher')
+    #Lnewcipher = fields.ListField(attribute='Lnewcipher')
+    
+    class Meta:
+        resource_name = 'delete'
+        object_class = Delete
+        authorization = Authorization()
+        always_return_data=True
+
+    # adapted this from ModelResource
+    def get_resource_uri(self, bundle_or_obj):
+        kwargs = {
+            'resource_name': self._meta.resource_name,
+        }
+
+        if isinstance(bundle_or_obj, Bundle):
+            kwargs['pk'] = bundle_or_obj.obj.LkeyW# pk is referenced in ModelResource
+        else:
+            kwargs['pk'] = bundle_or_obj.LkeyW
+        
+        if self._meta.api_name is not None:
+            kwargs['api_name'] = self._meta.api_name
+        
+        return self._build_reverse_url('api_dispatch_detail', kwargs=kwargs)
+
+    def get_object_list(self, request):
+        # inner get of object list... this is where you'll need to
+        # fetch the data from what ever data source
+        return 0
+
+    def obj_get_list(self, request=None, **kwargs):
+        # outer get of object list... this calls get_object_list and
+        # could be a point at which additional filtering may be applied
+        return self.get_object_list(request)
+
+    def obj_get(self, request=None, **kwargs):
+        # get one object from data source
+        data = {"file_id %s":self.file_id, "LkeyW {}":self.LkeyW, "Lfileno %s":self.Lfileno, "Ltemp %s":self.Ltemp, "Lcipher %s":self.Lcipher,"status %s":self.status}
+        return data
+    
+    def obj_create(self, bundle, request=None, **kwargs):
+        logger.info("Delete in SSE Server")
+        logger.debug("TA url: %s",URL_TA)
+        
+        # create a new object
+        bundle.obj = Delete()
+         
+        # full_hydrate does the heavy lifting mapping the
+        # POST-ed payload key/values to object attribute/values
+        bundle = self.full_hydrate(bundle)
+           
+        # invoke API of TA
+        file_id = bundle.obj.file_id
+        Lfileno = bundle.obj.Lfileno   
+        LkeyW=bundle.obj.LkeyW
+        Ltemp = bundle.obj.Ltemp
+        #Lnew = bundle.obj.Lnew
+        Lcipher = bundle.obj.Lcipher
+        #Lnew_cipher = bundle.obj.Lnewcipher
+        
+        logger.debug("Received data from user for delete function: - file_id: %s, - LkeyW: %s,- List file number: %s, -Ltemp: %s, - Lcipher: %s",file_id,LkeyW,Lfileno,Ltemp,Lcipher)
+              
+        length = len(bundle.obj.LkeyW)
+        data = []
+        for i in range(0,length):
+            item = {}
+            item["KeyW"] = bundle.obj.LkeyW[i]
+            data.append(item)
+        
+       # logger.debug("List of objects:%s",data)
+        object = {}
+        object["objects"]=data
+       
+        # Send request to TA
+        logger.debug("Object sent to TA: %s",json.dumps(object)) 
+        response = requests.patch(URL_TA, json=object)  
+      
+        logger.debug("Response from TA: Lta = %s", response.text)
+          
+        # check if the list received from TA contains the list received from the user
+        Lobject = response.json()["objects"]
+        logger.debug("List from TA: %s", Lobject)
+         
+        flag = True
+         
+        for i in range(0,length):
+            Lta = Lobject[i]["Lta"] # list of addresses computed by TA with No.Search + 1
+            logger.debug("List %d from TA %s",i,Lta)
+            Lu = Ltemp[i] # list of addresses computed for i_th keyword by user with No.Search+1
+            logger.debug("List %d from user: %s",i,Lu)
+            if not(Lu == Lta): # if found any non-match (exits a a keyword, of which addresses computed by user and TA are different)
+                flag=False
+                i = length # exit For loop
+                logger.debug("not match")
+         
+        if flag==True:
+            logger.debug("matched")
+            logger.debug("Lfileno: %s",Lfileno)
+                     
+            for j in range(0,length): # loop over each field
+                KeyW = LkeyW[j] 
+                logger.debug("j: %d, KeyW: %s",j,KeyW)
+                KeyW_ciphertext = KeyW['ct'] # get value of json
+                fileno = Lfileno[j]
+
+                # find the entry in Map table
+                for i in range(1, int(fileno) + 1): # fileno starts at 1
+                    logger.debug("i: %d", i)
+                    input =  (KeyW_ciphertext + str(i) + "0").encode('utf-8')
+                    addr = hash(input)
+                    logger.debug("hash input to compute address: %s", input)
+                    logger.debug("the hash output (computed from KeyW): %s", addr)
+                    logger.debug("type of addr: %s",type(addr))
+    
+                    try:
+                        logger.debug("finding address")
+                        cf = Map.objects.filter(address=addr,value=file_id)
+                        count = cf.count()
+                        logger.debug("number of found items:%d",count)
+                        if (count>0):
+                            logger.debug("Found item at i=%d",i)
+                            logger.debug("Found item is: %s",cf)
+                            ret = i
+
+                            logger.debug("ends at item:%d",i)
+                            
+                            # Delete the current (address, value) and update with the new (address, value)
+                            logger.debug("Delete the entry")
+                            cf.delete()
+                            
+                            # add new address
+#                             logger.debug("New address: %s", Lnew[j])
+#                             logger.debug("Add new address")
+#                             Map.objects.create(address=Lnew[j][0], value=file_id)
+                            
+                            logger.debug("fileno:%d",int(fileno))
+                            
+                            
+                            if i < int(fileno): # replace address of the last entry of the same keyword
+                                logger.debug("Replace the item with the lastly-added address of the same keyword")
+                                lastitem_input =  (KeyW_ciphertext + str(fileno) + "0").encode('utf-8')
+                                logger.debug("lastly-added item input:%s",KeyW_ciphertext + str(fileno) + "0")
+                                lastitem_addr = hash(lastitem_input)
+                                logger.debug("The address of lastly-added item of the same keyword:%s",lastitem_addr)
+                                lastitem = Map.objects.get(address=lastitem_addr)
+                                logger.debug("Lastly-added item of the same keyword:%s,%s",lastitem.address,lastitem.value)
+                                lastitem_fileid = lastitem.value
+                                logger.debug("File id of lastly-added item of the same keyword:%s",lastitem_fileid)
+                                lastitem.delete()
+                                Map.objects.create(address=addr, value=lastitem_fileid)
+                            else:
+                                logger.debug("i (%d) is equal fileno (%d)",i,int(fileno))
+                
+                     
+                            # find the ciphertext in Cipher table 
+                            # Note that in this implementation, ciphertext of the same keywords in different files are the same
+                            logger.debug("Delete ciphertext")
+                            data = CipherText.objects.filter(data=Lcipher[j], jsonId=file_id) 
+                            logger.debug("current cipher: %s", data)
+                            data.delete()
+#                             logger.debug("new cipher: {}", Lnew_cipher[j])
+#                             CipherText.objects.create(data=Lnew_cipher[j], jsonId=file_id)
                         
                             i=int(fileno)+1 # stop the for loop
                     except:
