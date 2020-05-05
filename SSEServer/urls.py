@@ -22,12 +22,14 @@ ciphertext_resource = CiphertextResource()
 map_resource = MapResource()
 search_resource = SearchResource();
 update_resource = UpdateResource();
+delete_resource = DeleteResource();
 
 v1_api = Api(api_name='v1')
 v1_api.register(ciphertext_resource)
 v1_api.register(map_resource)
 v1_api.register(search_resource)
 v1_api.register(update_resource)
+v1_api.register(delete_resource)
 
 
 urlpatterns = [
