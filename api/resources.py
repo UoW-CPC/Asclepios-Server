@@ -186,14 +186,15 @@ class SearchResource(Resource):
             bundle.obj.Cfw = CipherL
             logger.debug("The list of ciphertext: %s",CipherL)
 
-            bundle.obj.KeyW = '' # hide KeyW in the response
+            bundle.obj.KeyW = "" # hide KeyW in the response
             bundle.obj.fileno = 0 # hide fileNo in the response  
             bundle.obj.Lu=[]     # hide Lu in the response  
 
             logger.debug("Send list of ciphertext (Cfw) back to the user: %s", bundle)
         else:
             logger.debug("Lu!=Lta")
-        
+            bundle.obj.KeyW = response.json()["KeyW"]
+            logger.debug("Error message:%s",bundle.obj.KeyW)
  
         return bundle
     
