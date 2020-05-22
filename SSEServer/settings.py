@@ -159,8 +159,13 @@ logging.config.dictConfig({
             'level': LOGLEVEL,
             'handlers': ['console',],
         },
+        'django.utils.autoreload': {
+            'level': 'ERROR',
+            # ...
+        }
     },
 })
+
 
 # Prevent creating pyc files
 PYTHONDONTWRITEBYTECODE = 1
