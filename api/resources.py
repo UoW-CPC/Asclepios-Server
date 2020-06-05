@@ -22,7 +22,7 @@ def hash(input):
 logger = logging.getLogger(__name__)
 
 # Get URL of Trusted Authority (TA)
-URL_TA = os.environ['TA_SERVER']#"http://127.0.0.1:8000/api/v1/search/"#"http://127.0.0.1:8000/api/v1/search/" #os.getenv('TA_SERVER')
+URL_TA = os.environ['TA_SERVER']+"/api/v1/search/"#"http://127.0.0.1:8000/api/v1/search/"#"http://127.0.0.1:8000/api/v1/search/" #os.getenv('TA_SERVER')
     
 #===============================================================================
 # "Ciphertext" resource
@@ -322,6 +322,7 @@ class UpdateResource(Resource):
                      
             for j in range(0,length): # loop over each field
                 KeyW = LkeyW[j] 
+                logger.debug("Replace ciphertext over different fields")
                 logger.debug("j: %d, KeyW: %s",j,KeyW)
                 KeyW_ciphertext = KeyW['ct'] # get value of json
                 fileno = Lfileno[j]
