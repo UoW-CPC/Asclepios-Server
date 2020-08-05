@@ -81,14 +81,14 @@ WSGI_APPLICATION = 'SSEServer.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3', # for local test
-        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'), # for local test
-        #'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        #'NAME': os.environ['DB_NAME'],#'ssedb', # database name
-        #'USER': os.environ['DB_USER'], # user name
-        #'PASSWORD': os.environ['DB_PASSWORD'], # user password
-        #'HOST': os.environ['DB_HOST'], # postgres server
-        #'PORT': os.environ['DB_PORT'],  # postgres port
+#         'ENGINE': 'django.db.backends.sqlite3', # for local test
+#         'NAME': os.path.join(BASE_DIR, 'db.sqlite3'), # for local test
+        'ENGINE': 'django.db.backends.postgresql_psycopg2',
+        'NAME': os.environ['DB_NAME'],#'ssedb', # database name
+        'USER': os.environ['DB_USER'], # user name
+        'PASSWORD': os.environ['DB_PASSWORD'], # user password
+        'HOST': os.environ['DB_HOST'], # postgres server
+        'PORT': os.environ['DB_PORT'],  # postgres port
     }
 }
 
@@ -128,7 +128,6 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/1.11/howto/static-files/
-
 STATIC_URL = '/static/'
 
 
@@ -165,7 +164,6 @@ logging.config.dictConfig({
         }
     },
 })
-
 
 # Prevent creating pyc files
 PYTHONDONTWRITEBYTECODE = 1
