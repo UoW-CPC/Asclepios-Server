@@ -14,6 +14,10 @@ from datetime import timedelta
 from minio import Minio
 from minio.error import ResponseError
 
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from threading import Thread, Lock
+
 #===============================================================================
 # Common functions
 #===============================================================================  
@@ -24,6 +28,8 @@ def hash(input):
 
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
+
+update_lock = sem = threading.Semaphore()
 
 # Get URL of Trusted Authority (TA)
 URL_TA = os.environ['TA_SERVER']+"/api/v1/search/"#"http://127.0.0.1:8000/api/v1/search/"#"http://127.0.0.1:8000/api/v1/search/" #os.getenv('TA_SERVER')
@@ -213,6 +219,7 @@ class SearchResource(Resource):
 #===============================================================================       
 class Update(object):
     LkeyW = [] # list of KeyW
+    LnewKeyW = [] # list of newKeyW
     LfileNo = [] # list of No.Files
     Ltemp = [] # list of temp addresses
     Lnew = [] # list of new addresses
@@ -226,10 +233,11 @@ class Update(object):
 #===============================================================================   
 class UpdateResource(Resource):
     LkeyW = fields.ListField(attribute='LkeyW')
+    LnewKeyW = fields.ListField(attribute='LnewKeyW')
     Lfileno = fields.ListField(attribute='Lfileno')
     Ltemp = fields.ListField(attribute='Ltemp')
     Lnew = fields.ListField(attribute='Lnew')
-    status = fields.IntegerField(attribute='status')  # status of update, i.e. 0 if not found, 1 if deleted
+    status = fields.IntegerField(attribute='status')  # status of update, i.e. 0 if not found, 1 if updated
     file_id = fields.CharField(attribute='file_id')
     Lcurrentcipher = fields.ListField(attribute='Lcurrentcipher')
     Lnewcipher = fields.ListField(attribute='Lnewcipher')
@@ -272,6 +280,13 @@ class UpdateResource(Resource):
         return data
     
     def obj_create(self, bundle, request=None, **kwargs):
+        global update_lock
+        cur_thread = threading.current_thread()
+        logger.debug("Thread arrived =>  {0} ".format(cur_thread.name))
+        update_lock.acquire()
+        cur_thread = threading.current_thread()
+        logger.debug("Thread entered into critical region  =>  {0}".format(cur_thread.name))
+
         logger.info("Update in SSE Server")
         logger.debug("TA url: %s",URL_TA)
         
@@ -286,25 +301,41 @@ class UpdateResource(Resource):
         file_id = bundle.obj.file_id
         Lfileno = bundle.obj.Lfileno   
         LkeyW=bundle.obj.LkeyW
+        LnewKeyW=bundle.obj.LnewKeyW
         Ltemp = bundle.obj.Ltemp
         Lnew = bundle.obj.Lnew
         Lcurrent_cipher = bundle.obj.Lcurrentcipher
         Lnew_cipher = bundle.obj.Lnewcipher
         
-        logger.debug("Received data from user: - file_id: %s, - LkeyW: %s,- List file number: %s, - Ltemp: %s,- Lnew: %s",file_id,LkeyW,Lfileno,Ltemp,Lnew)
+        logger.debug("Received data from user: - file_id: %s, - LkeyW: %s,- LnewKeyW: %s, - List file number: %s, - Ltemp: %s,- Lnew: %s",file_id,LkeyW,LnewKeyW,Lfileno,Ltemp,Lnew)
               
         length = len(bundle.obj.LkeyW)
         data = []
+        update_data_delete = []
+        update_data_add = []
+        transaction_data = []
         for i in range(0,length):
             item = {}
-            item["KeyW"] = bundle.obj.LkeyW[i]
-            data.append(item)
+            item["KeyW"] = bundle.obj.LkeyW[i] # a json object {"KeyW":...}
+            data.append(item) # this is to verify request from user  
+            item_add ={}       
+            item_add['KeyW'] = bundle.obj.LnewKeyW[i]
+            item_add["op"] = "add" # a json object {"op":...}. Increase/ add No.Files of new keyword
+            update_data_add.append(item_add) # this is to acknowlege TA after updating database
+            item_del = {}
+            item_del["KeyW"] = bundle.obj.LkeyW[i] # a json object {"KeyW":...}
+            item_del["op"] = "delete" # delete/ decrease No.Files of current keyword
+            update_data_delete.append(item_del)
+#             item_trans = {}
+#             item_trans["KeyW"] = bundle.obj.LkeyW[i] 
+#             item_trans["op"] = "trans"
+#             transaction_data.append(item_trans)
         
        # logger.debug("List of objects:%s",data)
         object = {}
         object["objects"]=data
        
-        # Send request to TA
+        # Send a patch request to TA
         logger.debug("Object sent to TA: %s",json.dumps(object)) 
         response = requests.patch(URL_TA, json=object)  
       
@@ -315,8 +346,11 @@ class UpdateResource(Resource):
         logger.debug("List from TA: %s", Lobject)
          
         flag = True
-         
+        
+        logger.debug("Update data in SSE Server")
+        
         for i in range(0,length):
+            logger.debug("Compare Lu and Lta - i:%d",i)
             Lta = Lobject[i]["Lta"] # list of addresses computed by TA with No.Search + 1
             logger.debug("List %d from TA %s",i,Lta)
             Lu = Ltemp[i] # list of addresses computed for i_th keyword by user with No.Search+1
@@ -324,7 +358,15 @@ class UpdateResource(Resource):
             if not(Lu == Lta): # if found any non-match (exits a a keyword, of which addresses computed by user and TA are different)
                 flag=False
                 i = length # exit For loop
+                bundle.obj.status = 0
                 logger.debug("not match")
+#                 trans_object = {}
+#                 trans_object["objects"]=transaction_data    
+#                 # Send a patch request to TA
+#                 logger.debug("Delete transaction id - Object sent to acknowledge TA: %s",json.dumps(trans_object)) 
+#                 response = requests.patch(URL_TA, json=trans_object)  
+#                 logger.debug("Delete transaction id - Response from TA: Lta = %s", response.text) 
+
          
         if flag==True:
             logger.debug("matched")
@@ -398,7 +440,24 @@ class UpdateResource(Resource):
                             i=int(fileno)+1 # stop the for loop
                     except:
                         logger.debug("Not found: %s",addr)
-                        cf = None                         
+                        cf = None    
+                        
+            # Send acknowledgment to TA for update No.Files, No.Search
+            update_object = {}
+            update_object["objects"]=update_data_delete+update_data_add
+           
+            # Send a patch request to TA
+            logger.debug("Object sent to acknowledge TA: %s",json.dumps(update_object)) 
+            response = requests.patch(URL_TA, json=update_object)  
+          
+            logger.debug("Response from TA: Lta = %s", response.text) 
+            
+            bundle.obj.status = 1
+                        
+        cur_thread = threading.current_thread()
+        logger.debug("Thread left critical region =>  {0} ".format(cur_thread.name))
+        update_lock.release() 
+                         
         return bundle
 
 #===============================================================================       
