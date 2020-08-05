@@ -665,7 +665,7 @@ class PresignUrlResource(Resource):
     def obj_get(self, bundle, request = None, **kwargs):
 #         get one object from data source
         fname = kwargs['pk']         
-        logger.debug("filename:",fname)
+        logger.debug("filename:%s",fname)
         
         minioClient = Minio(MINIO_URL,access_key=MINIO_ACCESS_KEY,secret_key=MINIO_SECRET_KEY,secure=json.loads(MINIO_SSL_SECURE.lower()))
 
@@ -673,7 +673,7 @@ class PresignUrlResource(Resource):
         try:
             bundle_obj = PresignUrl()
             url=minioClient.presigned_get_object(MINIO_BUCKET_NAME, fname, expires=timedelta(days=int(MINIO_EXPIRE_GET)))
-            logger.debug("url:",url)
+            logger.debug("url:%s",url)
             bundle_obj.url = url;
             bundle_obj.fname = fname;
             return bundle_obj;
@@ -688,7 +688,7 @@ class PresignUrlResource(Resource):
 
         fname = bundle.obj.fname
         
-        logger.debug("filename:",fname)
+        logger.debug("filename:%s",fname)
 
         minioClient = Minio(MINIO_URL,access_key=MINIO_ACCESS_KEY,secret_key=MINIO_SECRET_KEY,secure=json.loads(MINIO_SSL_SECURE.lower()))
 
