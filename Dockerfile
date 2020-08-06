@@ -13,7 +13,7 @@ FROM python:3.7-slim
 
 # install mysql client
 RUN apt-get update && \
-    apt-get install -y python3-dev default-libmysqlclient-dev libssl-dev && \
+    apt-get install -y python3-dev default-libmysqlclient-dev libssl-dev gcc && \
     rm -rf /var/lib/apt
 
 # create root directory for our project in the container
