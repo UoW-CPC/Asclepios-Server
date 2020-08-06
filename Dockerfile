@@ -7,9 +7,14 @@ FROM python:3.7-slim
 #ENV PYTHONUNBUFFERED 1
 
 # install psql client
+#RUN apt-get update && \
+#    apt-get install -y postgresql-client && \
+#    rm -rf /var/lib/apt/lists/
+
+# install mysql client
 RUN apt-get update && \
-    apt-get install -y postgresql-client && \
-    rm -rf /var/lib/apt/lists/
+    apt-get install -y mysql-client && \
+    rm -rf /var/lib/apt
 
 # create root directory for our project in the container
 RUN mkdir /SSEServer
