@@ -10,6 +10,10 @@ import hashlib
 import logging
 import os
 
+from datetime import timedelta
+from minio import Minio
+from minio.error import ResponseError
+
 #===============================================================================
 # Common functions
 #===============================================================================  
@@ -22,8 +26,14 @@ def hash(input):
 logger = logging.getLogger(__name__)
 
 # Get URL of Trusted Authority (TA)
-URL_TA = os.environ['TA_SERVER']#"http://127.0.0.1:8000/api/v1/search/"#"http://127.0.0.1:8000/api/v1/search/" #os.getenv('TA_SERVER')
-    
+URL_TA = os.environ['TA_SERVER']+"/api/v1/search/"#"http://127.0.0.1:8000/api/v1/search/"#"http://127.0.0.1:8000/api/v1/search/" #os.getenv('TA_SERVER')
+MINIO_ACCESS_KEY=os.environ['MINIO_ACCESS_KEY']
+MINIO_SECRET_KEY=os.environ['MINIO_SECRET_KEY']
+MINIO_BUCKET_NAME= os.environ['MINIO_BUCKET_NAME']
+MINIO_URL = os.environ['MINIO_URL']
+MINIO_SSL_SECURE=os.environ['MINIO_SSL_SECURE']
+MINIO_EXPIRE_GET=os.environ['MINIO_EXPIRE_GET'] # number of days before expired (for GET presign url)
+MINIO_EXPIRE_PUT=os.environ['MINIO_EXPIRE_PUT'] # number of days before expired (for PUT presign url)
 #===============================================================================
 # "Ciphertext" resource
 #===============================================================================   
@@ -322,6 +332,7 @@ class UpdateResource(Resource):
                      
             for j in range(0,length): # loop over each field
                 KeyW = LkeyW[j] 
+                logger.debug("Replace ciphertext over different fields")
                 logger.debug("j: %d, KeyW: %s",j,KeyW)
                 KeyW_ciphertext = KeyW['ct'] # get value of json
                 fileno = Lfileno[j]
@@ -581,3 +592,112 @@ class DeleteResource(Resource):
                         cf = None                         
         return bundle
 
+# # reference: ...
+# def create_presigned_post(bucket_name, object_name,
+#                           fields=None, conditions=None, expiration=3600):
+#     """Generate a presigned URL S3 POST request to upload a file
+# 
+#     :param bucket_name: string
+#     :param object_name: string
+#     :param fields: Dictionary of prefilled form fields
+#     :param conditions: List of conditions to include in the policy
+#     :param expiration: Time in seconds for the presigned URL to remain valid
+#     :return: Dictionary with the following keys:
+#         url: URL to post to
+#         fields: Dictionary of form fields and values to submit with the POST
+#     :return: None if error.
+#     """
+# 
+#     # Generate a presigned S3 POST URL
+#     s3_client = boto3.client('s3')
+#     try:
+#         response = s3_client.generate_presigned_post(bucket_name,
+#                                                      object_name,
+#                                                      Fields=fields,
+#                                                      Conditions=conditions,
+#                                                      ExpiresIn=expiration)
+#     except ClientError as e:
+#         logging.error(e)
+#         return None
+# 
+#     # The response contains the presigned URL and required fields
+#     return response
+    
+class PresignUrl(object):
+    fname = ""
+    url = ""
+    
+class PresignUrlResource(Resource):
+    fname = fields.CharField(attribute='fname')
+    url = fields.CharField(attribute='url')
+    
+    class Meta:
+        resource_name = 'presign'
+        object_class = PresignUrl
+        authorization = Authorization()
+        always_return_data=True
+        fields = ['fname','url']
+
+    def get_resource_uri(self, bundle_or_obj):
+        kwargs = {
+            'resource_name': self._meta.resource_name,
+        }
+
+        if isinstance(bundle_or_obj, Bundle):
+            kwargs['pk'] = bundle_or_obj.obj.fname # pk is referenced in ModelResource
+        else:
+            kwargs['pk'] = bundle_or_obj.fname
+          
+        if self._meta.api_name is not None:
+            kwargs['api_name'] = self._meta.api_name
+          
+        return self._build_reverse_url('api_dispatch_detail', kwargs = kwargs)
+ 
+    def get_object_list(self, request):
+        # inner get of object list... this is where you'll need to
+        # fetch the data from what ever data source
+        return 0
+ 
+    def obj_get_list(self, request = None, **kwargs):
+        # outer get of object list... this calls get_object_list and
+        # could be a point at which additional filtering may be applied
+        return self.get_object_list(request)
+    def obj_get(self, bundle, request = None, **kwargs):
+#         get one object from data source
+        fname = kwargs['pk']         
+        logger.debug("filename:%s",fname)
+        
+        minioClient = Minio(MINIO_URL,access_key=MINIO_ACCESS_KEY,secret_key=MINIO_SECRET_KEY,secure=json.loads(MINIO_SSL_SECURE.lower()))
+
+        # presigned get object URL for object name, expires in 2 days.
+        try:
+            bundle_obj = PresignUrl()
+            url=minioClient.presigned_get_object(MINIO_BUCKET_NAME, fname, expires=timedelta(days=int(MINIO_EXPIRE_GET)))
+            logger.debug("url:%s",url)
+            bundle_obj.url = url;
+            bundle_obj.fname = fname;
+            return bundle_obj;
+        except KeyError:
+            raise NotFound("Object not found")
+        
+    def obj_create(self, bundle, request=None, **kwargs):
+        logger.info("Retrieve presign url for upload file to Minio")
+        # full_hydrate does the heavy lifting mapping the
+        # POST-ed payload key/values to object attribute/values
+        bundle = self.full_hydrate(bundle)
+
+        fname = bundle.obj.fname
+        
+        logger.debug("filename:%s",fname)
+
+        minioClient = Minio(MINIO_URL,access_key=MINIO_ACCESS_KEY,secret_key=MINIO_SECRET_KEY,secure=json.loads(MINIO_SSL_SECURE.lower()))
+
+        # presigned get object URL for object name, expires in 2 days.
+        try:
+            url=minioClient.presigned_put_object(MINIO_BUCKET_NAME, fname, expires=timedelta(days=int(MINIO_EXPIRE_PUT)))
+            bundle.obj.url = url;
+            bundle.obj.fname = fname;
+        except KeyError:
+            raise NotFound("Object not found")
+
+        return bundle
