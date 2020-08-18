@@ -4,7 +4,8 @@ from django.db import models
 
 class CipherText(models.Model):
 	jsonId = models.CharField(max_length=300)
-	data = models.CharField(max_length=300)
+	#data = models.CharField(max_length=300)
+	data = models.TextField()
 	def __str__(self):
 		return '%s %s' % (self.jsonId, self.data)
 
