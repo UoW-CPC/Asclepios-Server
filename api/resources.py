@@ -45,6 +45,7 @@ class CiphertextResource(ModelResource):
         authorization = Authorization()
         filtering = {
             "jsonId": ['exact'],
+            "keyId": ['exact'],
         }
 
     
@@ -60,6 +61,7 @@ class MapResource(ModelResource):
         filtering = {
             "address": ['exact'],
             "value": ['exact'],
+            "keyId": ['exact'],
         }
 
     
@@ -71,6 +73,7 @@ class Search(object):
     fileno = 0
     Lu = []
     Cfw = []
+    keyId = ''
 
     
 #===============================================================================
@@ -81,6 +84,7 @@ class SearchResource(Resource):
     fileno = fields.IntegerField(attribute='fileno')
     Lu = fields.ListField(attribute='Lu')
     Cfw = fields.ListField(attribute="Cfw")
+    keyId = fields.CharField(attribute="keyId")
     
     class Meta:
         resource_name = 'search'
@@ -135,12 +139,14 @@ class SearchResource(Resource):
         # invoke API of TA
         fileno = bundle.obj.fileno
         KeyW = json.dumps(bundle.obj.KeyW)
+        keyid=bundle.obj.keyId
         
         logger.debug("KeyW: %s", KeyW)
+        logger.debug("id of key: %s",keyid)
         
         data = {}
         data["KeyW"] = bundle.obj.KeyW
-        data["fileno"] = bundle.obj.fileno
+        data["keyId"] = bundle.obj.keyId
         
         logger.debug("json data: {}", data)
         logger.debug("URL_TA: %s",URL_TA)
@@ -174,21 +180,21 @@ class SearchResource(Resource):
                 logger.debug("type of addr: %s",type(addr))
 
                 try:
-                    logger.debug("finding address")
+                    logger.debug("finding matched address")
                     
                     # Retrieve value which corresponds to the address 'addr'
-                    cf = Map.objects.get(address=addr).value
+                    cf = Map.objects.get(address=addr,keyId=keyid).value
                     logger.debug("File identifier: %s",cf)
                     
                     # Retrieve ciphertexts
-                    ct = CipherText.objects.filter(jsonId=cf).values()
+                    ct = CipherText.objects.filter(jsonId=cf,keyId=keyid).values()
                     logger.debug("Ciphertext of the same file: %s",ct)
                     CipherL.append(list(ct))
                     
                     # Delete the current (address, value) and update with the new (address, value)
-                    Map.objects.get(address=addr).delete()
+                    Map.objects.get(address=addr,keyId=keyid).delete()
                     logger.debug("New address: %s",Lu[i-1])
-                    Map.objects.create(address=Lu[i-1],value=cf) # fileno == length(Lu)
+                    Map.objects.create(address=Lu[i-1],value=cf,keyId=keyid) # fileno == length(Lu)
                 except:
                     logger.debug("Not found: %s",addr)
                     cf = None
@@ -198,7 +204,8 @@ class SearchResource(Resource):
 
             bundle.obj.KeyW = "" # hide KeyW in the response
             bundle.obj.fileno = 0 # hide fileNo in the response  
-            bundle.obj.Lu=[]     # hide Lu in the response  
+            bundle.obj.Lu=[]     # hide Lu in the response 
+            bundle.obj.keyId="" 
 
             logger.debug("Send list of ciphertext (Cfw) back to the user: %s", bundle)
         else:
@@ -220,6 +227,7 @@ class Update(object):
     file_id=""
     Lcurrentcipher = []
     Lnewcipher = []
+    keyId =""
     
 #===============================================================================
 # "Update Query" resource
@@ -233,6 +241,7 @@ class UpdateResource(Resource):
     file_id = fields.CharField(attribute='file_id')
     Lcurrentcipher = fields.ListField(attribute='Lcurrentcipher')
     Lnewcipher = fields.ListField(attribute='Lnewcipher')
+    keyId = fields.CharField(attribute='keyId')
     
     class Meta:
         resource_name = 'update'
@@ -290,14 +299,16 @@ class UpdateResource(Resource):
         Lnew = bundle.obj.Lnew
         Lcurrent_cipher = bundle.obj.Lcurrentcipher
         Lnew_cipher = bundle.obj.Lnewcipher
+        keyid = bundle.obj.keyId
         
-        logger.debug("Received data from user: - file_id: %s, - LkeyW: %s,- List file number: %s, - Ltemp: %s,- Lnew: %s",file_id,LkeyW,Lfileno,Ltemp,Lnew)
+        logger.debug("Received data from user: - file_id: %s, - LkeyW: %s,- List file number: %s, - Ltemp: %s,- Lnew: %s, - keyId: %s",file_id,LkeyW,Lfileno,Ltemp,Lnew,keyid)
               
         length = len(bundle.obj.LkeyW)
         data = []
         for i in range(0,length):
             item = {}
             item["KeyW"] = bundle.obj.LkeyW[i]
+            item["keyId"] = keyid
             data.append(item)
         
        # logger.debug("List of objects:%s",data)
@@ -348,12 +359,12 @@ class UpdateResource(Resource):
     
                     try:
                         logger.debug("finding address")
-                        cf = Map.objects.filter(address=addr,value=file_id)
+                        cf = Map.objects.filter(address=addr,value=file_id,keyId=keyid)
                         count = cf.count()
                         logger.debug("number of found items:%d",count)
                         if (count>0):
                             logger.debug("Found item at i=%d",i)
-                            logger.debug("Found item is: %s",cf)
+                            logger.debug("Found item is: {}    ",cf)
                             ret = i
 
                             logger.debug("ends at item:%d",i)
@@ -365,7 +376,7 @@ class UpdateResource(Resource):
                             # add new address
                             logger.debug("New address: %s", Lnew[j])
                             logger.debug("Add new address")
-                            Map.objects.create(address=Lnew[j][0], value=file_id)
+                            Map.objects.create(address=Lnew[j][0], value=file_id, keyId=keyid)
                             
                             logger.debug("fileno:%d",int(fileno))
                             
@@ -376,12 +387,12 @@ class UpdateResource(Resource):
                                 logger.debug("lastly-added item input:%s",KeyW_ciphertext + str(fileno) + "0")
                                 lastitem_addr = hash(lastitem_input)
                                 logger.debug("The address of lastly-added item of the same keyword:%s",lastitem_addr)
-                                lastitem = Map.objects.get(address=lastitem_addr)
+                                lastitem = Map.objects.get(address=lastitem_addr,keyId=keyid)
                                 logger.debug("Lastly-added item of the same keyword:%s,%s",lastitem.address,lastitem.value)
                                 lastitem_fileid = lastitem.value
                                 logger.debug("File id of lastly-added item of the same keyword:%s",lastitem_fileid)
                                 lastitem.delete()
-                                Map.objects.create(address=addr, value=lastitem_fileid)
+                                Map.objects.create(address=addr, value=lastitem_fileid, keyId=keyid)
                             else:
                                 logger.debug("i (%d) is equal fileno (%d)",i,int(fileno))
                 
@@ -389,11 +400,11 @@ class UpdateResource(Resource):
                             # find the ciphertext in Cipher table 
                             # Note that in this implementation, ciphertext of the same keywords in different files are the same
                             logger.debug("Replace ciphertext")
-                            data = CipherText.objects.filter(data=Lcurrent_cipher[j], jsonId=file_id) 
-                            logger.debug("current cipher: %s", data)
+                            data = CipherText.objects.filter(data=Lcurrent_cipher[j], jsonId=file_id, keyId = keyid) 
+                            logger.debug("current cipher: {}", data)
                             data.delete()
                             logger.debug("new cipher: {}", Lnew_cipher[j])
-                            CipherText.objects.create(data=Lnew_cipher[j], jsonId=file_id)
+                            CipherText.objects.create(data=Lnew_cipher[j], jsonId=file_id, keyId = keyid)
                         
                             i=int(fileno)+1 # stop the for loop
                     except:
@@ -411,6 +422,7 @@ class Delete(object):
     file_id=""
     Lcurrentcipher = []
     Lnewcipher = []
+    keyId = ""
     
 
 #===============================================================================
@@ -420,11 +432,10 @@ class DeleteResource(Resource):
     LkeyW = fields.ListField(attribute='LkeyW')
     Lfileno = fields.ListField(attribute='Lfileno')
     Ltemp = fields.ListField(attribute='Ltemp')
-   # Lnew = fields.ListField(attribute='Lnew')
     status = fields.IntegerField(attribute='status')
     file_id = fields.CharField(attribute='file_id')
     Lcipher = fields.ListField(attribute='Lcipher')
-    #Lnewcipher = fields.ListField(attribute='Lnewcipher')
+    keyId = fields.CharField(attribute='keyId')
     
     class Meta:
         resource_name = 'delete'
@@ -479,9 +490,8 @@ class DeleteResource(Resource):
         Lfileno = bundle.obj.Lfileno   
         LkeyW=bundle.obj.LkeyW
         Ltemp = bundle.obj.Ltemp
-        #Lnew = bundle.obj.Lnew
         Lcipher = bundle.obj.Lcipher
-        #Lnew_cipher = bundle.obj.Lnewcipher
+        keyid = bundle.obj.keyId
         
         logger.debug("Received data from user for delete function: - file_id: %s, - LkeyW: %s,- List file number: %s, -Ltemp: %s, - Lcipher: %s",file_id,LkeyW,Lfileno,Ltemp,Lcipher)
               
@@ -490,6 +500,7 @@ class DeleteResource(Resource):
         for i in range(0,length):
             item = {}
             item["KeyW"] = bundle.obj.LkeyW[i]
+            item["keyId"] = keyid
             data.append(item)
         
        # logger.debug("List of objects:%s",data)
@@ -539,7 +550,7 @@ class DeleteResource(Resource):
     
                     try:
                         logger.debug("finding address")
-                        cf = Map.objects.filter(address=addr,value=file_id)
+                        cf = Map.objects.filter(address=addr,value=file_id, keyId = keyid)
                         count = cf.count()
                         logger.debug("number of found items:%d",count)
                         if (count>0):
@@ -552,12 +563,7 @@ class DeleteResource(Resource):
                             # Delete the current (address, value) and update with the new (address, value)
                             logger.debug("Delete the entry")
                             cf.delete()
-                            
-                            # add new address
-#                             logger.debug("New address: %s", Lnew[j])
-#                             logger.debug("Add new address")
-#                             Map.objects.create(address=Lnew[j][0], value=file_id)
-                            
+                             
                             logger.debug("fileno:%d",int(fileno))
                             
                             
@@ -567,12 +573,12 @@ class DeleteResource(Resource):
                                 logger.debug("lastly-added item input:%s",KeyW_ciphertext + str(fileno) + "0")
                                 lastitem_addr = hash(lastitem_input)
                                 logger.debug("The address of lastly-added item of the same keyword:%s",lastitem_addr)
-                                lastitem = Map.objects.get(address=lastitem_addr)
+                                lastitem = Map.objects.get(address=lastitem_addr, keyId=keyid)
                                 logger.debug("Lastly-added item of the same keyword:%s,%s",lastitem.address,lastitem.value)
                                 lastitem_fileid = lastitem.value
                                 logger.debug("File id of lastly-added item of the same keyword:%s",lastitem_fileid)
                                 lastitem.delete()
-                                Map.objects.create(address=addr, value=lastitem_fileid)
+                                Map.objects.create(address=addr, value=lastitem_fileid, keyId=keyid)
                             else:
                                 logger.debug("i (%d) is equal fileno (%d)",i,int(fileno))
                 
@@ -580,11 +586,9 @@ class DeleteResource(Resource):
                             # find the ciphertext in Cipher table 
                             # Note that in this implementation, ciphertext of the same keywords in different files are the same
                             logger.debug("Delete ciphertext")
-                            data = CipherText.objects.filter(data=Lcipher[j], jsonId=file_id) 
+                            data = CipherText.objects.filter(data=Lcipher[j], jsonId=file_id, keyId = keyid) 
                             logger.debug("current cipher: %s", data)
                             data.delete()
-#                             logger.debug("new cipher: {}", Lnew_cipher[j])
-#                             CipherText.objects.create(data=Lnew_cipher[j], jsonId=file_id)
                         
                             i=int(fileno)+1 # stop the for loop
                     except:
@@ -592,37 +596,6 @@ class DeleteResource(Resource):
                         cf = None                         
         return bundle
 
-# # reference: ...
-# def create_presigned_post(bucket_name, object_name,
-#                           fields=None, conditions=None, expiration=3600):
-#     """Generate a presigned URL S3 POST request to upload a file
-# 
-#     :param bucket_name: string
-#     :param object_name: string
-#     :param fields: Dictionary of prefilled form fields
-#     :param conditions: List of conditions to include in the policy
-#     :param expiration: Time in seconds for the presigned URL to remain valid
-#     :return: Dictionary with the following keys:
-#         url: URL to post to
-#         fields: Dictionary of form fields and values to submit with the POST
-#     :return: None if error.
-#     """
-# 
-#     # Generate a presigned S3 POST URL
-#     s3_client = boto3.client('s3')
-#     try:
-#         response = s3_client.generate_presigned_post(bucket_name,
-#                                                      object_name,
-#                                                      Fields=fields,
-#                                                      Conditions=conditions,
-#                                                      ExpiresIn=expiration)
-#     except ClientError as e:
-#         logging.error(e)
-#         return None
-# 
-#     # The response contains the presigned URL and required fields
-#     return response
-    
 class PresignUrl(object):
     fname = ""
     url = ""
