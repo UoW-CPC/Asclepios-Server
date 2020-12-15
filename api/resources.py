@@ -12,7 +12,7 @@ import os
 
 from datetime import timedelta
 from minio import Minio
-from minio.error import ResponseError
+#from minio.error import ResponseError
 
 #===============================================================================
 # Common functions
