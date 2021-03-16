@@ -1,12 +1,3 @@
-<<<<<<< HEAD
-Django==3.0.7
-django-tastypie==0.14.3
-django-cors-headers==3.1.1
-gunicorn==19.9.0
-requests==2.20.0
-mysqlclient==2.0.1
-minio
-=======
 Django
 django-tastypie
 django-cors-headers
@@ -14,4 +5,3 @@ gunicorn
 requests
 mysqlclient
 minio
->>>>>>> develop
