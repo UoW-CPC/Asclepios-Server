@@ -74,7 +74,7 @@ class Search(object):
     Lu = []
     Cfw = []
     keyId = ''
-
+    isfe = False
     
 #===============================================================================
 # "Search Query" resource
@@ -85,7 +85,8 @@ class SearchResource(Resource):
     Lu = fields.ListField(attribute='Lu')
     Cfw = fields.ListField(attribute="Cfw")
     keyId = fields.CharField(attribute="keyId")
-    
+    isfe = fields.BooleanField(attribute="isfe") # true if requesting only json id (file id) and key id (which is then used for functional encryption (FE), false if requesting data content
+
     class Meta:
         resource_name = 'search'
         object_class = Search
@@ -120,7 +121,7 @@ class SearchResource(Resource):
 
     def obj_get(self, request=None, **kwargs):
         # get one object from data source
-        data = {"KeyW":self.KeyW, "fileno":self.fileno, "Lu":self.Lu, "Cfw":self.Cfw}
+        data = {"KeyW":self.KeyW, "fileno":self.fileno, "Lu":self.Lu, "Cfw":self.Cfw, "isfe":self.isfe}
         return data
     
     def obj_create(self, bundle, request=None, **kwargs):
@@ -134,15 +135,12 @@ class SearchResource(Resource):
         # POST-ed payload key/values to object attribute/values
         bundle = self.full_hydrate(bundle)
          
-        logger.debug("Received data from user: - KeyW: %s, - file number: %s, - Lu: %s",bundle.obj.KeyW, bundle.obj.fileno, bundle.obj.Lu)
-        
+        logger.debug("Received data from user: - KeyW: {}, - file number: {}, - Lu: {}, id of key: {}, isfe: {}".format(bundle.obj.KeyW, bundle.obj.fileno, bundle.obj.Lu, bundle.obj.keyId, bundle.obj.isfe))
+
         # invoke API of TA
         fileno = bundle.obj.fileno
         KeyW = json.dumps(bundle.obj.KeyW)
         keyid=bundle.obj.keyId
-        
-        logger.debug("KeyW: %s", KeyW)
-        logger.debug("id of key: %s",keyid)
         
         data = {}
         data["KeyW"] = bundle.obj.KeyW
@@ -185,11 +183,14 @@ class SearchResource(Resource):
                     # Retrieve value which corresponds to the address 'addr'
                     cf = Map.objects.get(address=addr,keyId=keyid).value
                     logger.debug("File identifier: %s",cf)
-                    
-                    # Retrieve ciphertexts
-                    ct = CipherText.objects.filter(jsonId=cf,keyId=keyid).values()
-                    logger.debug("Ciphertext of the same file: %s",ct)
-                    CipherL.append(list(ct))
+        
+                    if(bundle.obj.isfe==False):
+                        # Retrieve ciphertexts
+                        ct = CipherText.objects.filter(jsonId=cf,keyId=keyid).values()
+                        logger.debug("Ciphertext of the same file: %s",ct)
+                        CipherL.append(list(ct))
+                    else: # return jsonId and keyId, and do not return data content
+                        CipherL.append({'jsonId':cf,'keyId':keyid})
                     
                     # Delete the current (address, value) and update with the new (address, value)
                     Map.objects.get(address=addr,keyId=keyid).delete()
