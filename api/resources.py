@@ -189,8 +189,8 @@ class SearchResource(Resource):
                         ct = CipherText.objects.filter(jsonId=cf,keyId=keyid).values()
                         logger.debug("Ciphertext of the same file: %s",ct)
                         CipherL.append(list(ct))
-                    else: # return jsonId and keyId, and do not return data content
-                        CipherL.append({'jsonId':cf,'keyId':keyid})
+                    else: # return jsonId, and do not return data content
+                        CipherL.append(cf)
                     
                     # Delete the current (address, value) and update with the new (address, value)
                     Map.objects.get(address=addr,keyId=keyid).delete()
