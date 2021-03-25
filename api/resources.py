@@ -26,7 +26,7 @@ def hash(input):
 logger = logging.getLogger(__name__)
 
 # Get URL of Trusted Authority (TA)
-URL_TA = os.environ['TA_SERVER']+"/api/v1/search/"#"http://127.0.0.1:8000/api/v1/search/"#"http://127.0.0.1:8000/api/v1/search/" #os.getenv('TA_SERVER')
+URL_TA = os.environ['TA_SERVER']+"/api/v1/search/" # URL of SSE TA to verify the user's request
 MINIO_ACCESS_KEY=os.environ['MINIO_ACCESS_KEY']
 MINIO_SECRET_KEY=os.environ['MINIO_SECRET_KEY']
 MINIO_BUCKET_NAME= os.environ['MINIO_BUCKET_NAME']
@@ -127,7 +127,7 @@ class SearchResource(Resource):
     def obj_create(self, bundle, request=None, **kwargs):
         logger.info("Search in SSE Server")
         logger.debug("TA url: %s",URL_TA)
-        
+
         # create a new object
         bundle.obj = Search()
          
@@ -150,8 +150,13 @@ class SearchResource(Resource):
         logger.debug("URL_TA: %s",URL_TA)
         
         # Send request to TA
-        logger.debug("Send request to TA")
-        response = requests.post(URL_TA, json=data)  
+        try:
+            header = {'Authorization':bundle.request.headers['Authorization']}
+        except:
+            header = {}
+
+        logger.debug("Send request to TA with header {}".format(header))
+        response = requests.post(URL_TA, json=data,headers=header)  
         
         logger.debug("Response from TA: Lta = %s", response.text)
         
@@ -317,8 +322,12 @@ class UpdateResource(Resource):
         object["objects"]=data
        
         # Send request to TA
-        logger.debug("Object sent to TA: %s",json.dumps(object)) 
-        response = requests.patch(URL_TA, json=object)  
+        try:
+            header = {'Authorization':bundle.request.headers['Authorization']}
+        except:
+            header = {}
+        logger.debug("Object sent to TA: {} with header {}".format(json.dumps(object),header)) 
+        response = requests.patch(URL_TA, json=object,headers=header)  
       
         logger.debug("Response from TA: Lta = %s", response.text)
           
@@ -365,7 +374,7 @@ class UpdateResource(Resource):
                         logger.debug("number of found items:%d",count)
                         if (count>0):
                             logger.debug("Found item at i=%d",i)
-                            logger.debug("Found item is: {}    ",cf)
+                            logger.debug("Found item is: {}",cf)
                             ret = i
 
                             logger.debug("ends at item:%d",i)
@@ -402,9 +411,9 @@ class UpdateResource(Resource):
                             # Note that in this implementation, ciphertext of the same keywords in different files are the same
                             logger.debug("Replace ciphertext")
                             data = CipherText.objects.filter(data=Lcurrent_cipher[j], jsonId=file_id, keyId = keyid) 
-                            logger.debug("current cipher: {}", data)
+                            logger.debug("current cipher: {}",data)
                             data.delete()
-                            logger.debug("new cipher: {}", Lnew_cipher[j])
+                            logger.debug("new cipher: {}",Lnew_cipher[j])
                             CipherText.objects.create(data=Lnew_cipher[j], jsonId=file_id, keyId = keyid)
                         
                             i=int(fileno)+1 # stop the for loop
@@ -509,8 +518,12 @@ class DeleteResource(Resource):
         object["objects"]=data
        
         # Send request to TA
-        logger.debug("Object sent to TA: %s",json.dumps(object)) 
-        response = requests.patch(URL_TA, json=object)  
+        try:
+            header = {'Authorization':bundle.request.headers['Authorization']}
+        except:
+            header = {}
+        logger.debug("Object sent to TA: {} with header {}".format(json.dumps(object),header)) 
+        response = requests.patch(URL_TA, json=object, headers=header)  
       
         logger.debug("Response from TA: Lta = %s", response.text)
           
