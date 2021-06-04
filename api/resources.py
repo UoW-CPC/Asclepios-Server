@@ -26,7 +26,7 @@ def hash(input):
 logger = logging.getLogger(__name__)
 
 # Get URL of Trusted Authority (TA)
-URL_TA = os.environ['TA_SERVER']+"/api/v1/search/"#"http://127.0.0.1:8000/api/v1/search/"#"http://127.0.0.1:8000/api/v1/search/" #os.getenv('TA_SERVER')
+URL_TA = os.environ['TA_SERVER']+"/api/v1/search/" # URL of SSE TA to verify the user's request
 MINIO_ACCESS_KEY=os.environ['MINIO_ACCESS_KEY']
 MINIO_SECRET_KEY=os.environ['MINIO_SECRET_KEY']
 MINIO_BUCKET_NAME= os.environ['MINIO_BUCKET_NAME']
@@ -74,7 +74,7 @@ class Search(object):
     Lu = []
     Cfw = []
     keyId = ''
-
+    isfe = False
     
 #===============================================================================
 # "Search Query" resource
@@ -85,7 +85,8 @@ class SearchResource(Resource):
     Lu = fields.ListField(attribute='Lu')
     Cfw = fields.ListField(attribute="Cfw")
     keyId = fields.CharField(attribute="keyId")
-    
+    isfe = fields.BooleanField(attribute="isfe") # true if requesting only json id (file id) and key id (which is then used for functional encryption (FE), false if requesting data content
+
     class Meta:
         resource_name = 'search'
         object_class = Search
@@ -120,13 +121,13 @@ class SearchResource(Resource):
 
     def obj_get(self, request=None, **kwargs):
         # get one object from data source
-        data = {"KeyW":self.KeyW, "fileno":self.fileno, "Lu":self.Lu, "Cfw":self.Cfw}
+        data = {"KeyW":self.KeyW, "fileno":self.fileno, "Lu":self.Lu, "Cfw":self.Cfw, "isfe":self.isfe}
         return data
     
     def obj_create(self, bundle, request=None, **kwargs):
         logger.info("Search in SSE Server")
         logger.debug("TA url: %s",URL_TA)
-        
+
         # create a new object
         bundle.obj = Search()
          
@@ -134,15 +135,12 @@ class SearchResource(Resource):
         # POST-ed payload key/values to object attribute/values
         bundle = self.full_hydrate(bundle)
          
-        logger.debug("Received data from user: - KeyW: %s, - file number: %s, - Lu: %s",bundle.obj.KeyW, bundle.obj.fileno, bundle.obj.Lu)
-        
+        logger.debug("Received data from user: - KeyW: {}, - file number: {}, - Lu: {}, id of key: {}, isfe: {}".format(bundle.obj.KeyW, bundle.obj.fileno, bundle.obj.Lu, bundle.obj.keyId, bundle.obj.isfe))
+
         # invoke API of TA
         fileno = bundle.obj.fileno
         KeyW = json.dumps(bundle.obj.KeyW)
         keyid=bundle.obj.keyId
-        
-        logger.debug("KeyW: %s", KeyW)
-        logger.debug("id of key: %s",keyid)
         
         data = {}
         data["KeyW"] = bundle.obj.KeyW
@@ -152,8 +150,13 @@ class SearchResource(Resource):
         logger.debug("URL_TA: %s",URL_TA)
         
         # Send request to TA
-        logger.debug("Send request to TA")
-        response = requests.post(URL_TA, json=data)  
+        try:
+            header = {'Authorization':bundle.request.headers['Authorization']}
+        except:
+            header = {}
+
+        logger.debug("Send request to TA with header {}".format(header))
+        response = requests.post(URL_TA, json=data,headers=header)  
         
         logger.debug("Response from TA: Lta = %s", response.text)
         
@@ -185,11 +188,14 @@ class SearchResource(Resource):
                     # Retrieve value which corresponds to the address 'addr'
                     cf = Map.objects.get(address=addr,keyId=keyid).value
                     logger.debug("File identifier: %s",cf)
-                    
-                    # Retrieve ciphertexts
-                    ct = CipherText.objects.filter(jsonId=cf,keyId=keyid).values()
-                    logger.debug("Ciphertext of the same file: %s",ct)
-                    CipherL.append(list(ct))
+        
+                    if(bundle.obj.isfe==False):
+                        # Retrieve ciphertexts
+                        ct = CipherText.objects.filter(jsonId=cf,keyId=keyid).values()
+                        logger.debug("Ciphertext of the same file: %s",ct)
+                        CipherL.append(list(ct))
+                    else: # return jsonId, and do not return data content
+                        CipherL.append(cf)
                     
                     # Delete the current (address, value) and update with the new (address, value)
                     Map.objects.get(address=addr,keyId=keyid).delete()
@@ -316,8 +322,12 @@ class UpdateResource(Resource):
         object["objects"]=data
        
         # Send request to TA
-        logger.debug("Object sent to TA: %s",json.dumps(object)) 
-        response = requests.patch(URL_TA, json=object)  
+        try:
+            header = {'Authorization':bundle.request.headers['Authorization']}
+        except:
+            header = {}
+        logger.debug("Object sent to TA: {} with header {}".format(json.dumps(object),header)) 
+        response = requests.patch(URL_TA, json=object,headers=header)  
       
         logger.debug("Response from TA: Lta = %s", response.text)
           
@@ -364,7 +374,7 @@ class UpdateResource(Resource):
                         logger.debug("number of found items:%d",count)
                         if (count>0):
                             logger.debug("Found item at i=%d",i)
-                            logger.debug("Found item is: {}    ",cf)
+                            logger.debug("Found item is: {}",cf)
                             ret = i
 
                             logger.debug("ends at item:%d",i)
@@ -401,9 +411,9 @@ class UpdateResource(Resource):
                             # Note that in this implementation, ciphertext of the same keywords in different files are the same
                             logger.debug("Replace ciphertext")
                             data = CipherText.objects.filter(data=Lcurrent_cipher[j], jsonId=file_id, keyId = keyid) 
-                            logger.debug("current cipher: {}", data)
+                            logger.debug("current cipher: {}",data)
                             data.delete()
-                            logger.debug("new cipher: {}", Lnew_cipher[j])
+                            logger.debug("new cipher: {}",Lnew_cipher[j])
                             CipherText.objects.create(data=Lnew_cipher[j], jsonId=file_id, keyId = keyid)
                         
                             i=int(fileno)+1 # stop the for loop
@@ -508,8 +518,12 @@ class DeleteResource(Resource):
         object["objects"]=data
        
         # Send request to TA
-        logger.debug("Object sent to TA: %s",json.dumps(object)) 
-        response = requests.patch(URL_TA, json=object)  
+        try:
+            header = {'Authorization':bundle.request.headers['Authorization']}
+        except:
+            header = {}
+        logger.debug("Object sent to TA: {} with header {}".format(json.dumps(object),header)) 
+        response = requests.patch(URL_TA, json=object, headers=header)  
       
         logger.debug("Response from TA: Lta = %s", response.text)
           
